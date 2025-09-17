@@ -1,6 +1,7 @@
 import json
 import logging
 import asyncio
+import codecs
 from flask import Flask, request, Response, stream_with_context, jsonify
 import httpx
 import time
@@ -682,157 +683,180 @@ def chat_completions():
                         }
                     ) as response:
                         generate.message_id = None
-                        buffer = ""
-                        
+                        decoder = codecs.getincrementaldecoder("utf-8")()
+                        text_buffer = ""
+
+                        def process_line(line_str):
+                            line_str = line_str.strip()
+                            if not line_str or not line_str.startswith('data:'):
+                                return
+
+                            _, _, payload = line_str.partition(':')
+                            payload = payload.lstrip()
+                            if not payload or payload == '[DONE]':
+                                return
+
+                            try:
+                                dify_chunk = json.loads(payload)
+                            except json.JSONDecodeError as e:
+                                logger.error(f"JSON decode error: {str(e)} | payload preview: {payload[:100]}")
+                                return
+                            except Exception as e:
+                                logger.error(f"Error processing chunk: {str(e)} | payload preview: {payload[:100]}")
+                                return
+
+                            if dify_chunk.get("event") == "message" and "answer" in dify_chunk:
+                                current_answer = dify_chunk["answer"]
+                                if not current_answer:
+                                    return
+
+                                message_id = dify_chunk.get("message_id", "")
+                                if not generate.message_id:
+                                    generate.message_id = message_id
+
+                                # 将当前批次的字符添加到输出缓冲区
+                                for char in current_answer:
+                                    output_buffer.append((char, generate.message_id))
+
+                                # 根据缓冲区大小动态调整输出速度
+                                while output_buffer:
+                                    char, msg_id = output_buffer.pop(0)
+                                    yield send_char(char, msg_id)
+                                    # 根据剩余缓冲区大小计算延迟
+                                    delay = calculate_delay(len(output_buffer))
+                                    time.sleep(delay)
+
+                                return
+
+                            # 处理Agent模式的消息事件
+                            if dify_chunk.get("event") == "agent_message" and "answer" in dify_chunk:
+                                current_answer = dify_chunk["answer"]
+                                if not current_answer:
+                                    return
+
+                                message_id = dify_chunk.get("message_id", "")
+                                if not generate.message_id:
+                                    generate.message_id = message_id
+
+                                # 将当前批次的字符添加到输出缓冲区
+                                for char in current_answer:
+                                    output_buffer.append((char, generate.message_id))
+
+                                # 根据缓冲区大小动态调整输出速度
+                                while output_buffer:
+                                    char, msg_id = output_buffer.pop(0)
+                                    yield send_char(char, msg_id)
+                                    # 根据剩余缓冲区大小计算延迟
+                                    delay = calculate_delay(len(output_buffer))
+                                    time.sleep(delay)
+
+                                return
+
+                            # 处理Agent的思考过程，记录日志但不输出给用户
+                            if dify_chunk.get("event") == "agent_thought":
+                                thought_id = dify_chunk.get("id", "")
+                                thought = dify_chunk.get("thought", "")
+                                tool = dify_chunk.get("tool", "")
+                                tool_input = dify_chunk.get("tool_input", "")
+                                observation = dify_chunk.get("observation", "")
+
+                                logger.info(f"[Agent Thought] ID: {thought_id}, Tool: {tool}")
+                                if thought:
+                                    logger.info(f"[Agent Thought] Thought: {thought}")
+                                if tool_input:
+                                    logger.info(f"[Agent Thought] Tool Input: {tool_input}")
+                                if observation:
+                                    logger.info(f"[Agent Thought] Observation: {observation}")
+
+                                # 获取message_id以关联思考和最终输出
+                                message_id = dify_chunk.get("message_id", "")
+                                if not generate.message_id and message_id:
+                                    generate.message_id = message_id
+
+                                return
+
+                            # 处理消息中的文件(如图片)，记录日志但不直接输出给用户
+                            if dify_chunk.get("event") == "message_file":
+                                file_id = dify_chunk.get("id", "")
+                                file_type = dify_chunk.get("type", "")
+                                file_url = dify_chunk.get("url", "")
+
+                                logger.info(f"[Message File] ID: {file_id}, Type: {file_type}, URL: {file_url}")
+                                return
+
+                            if dify_chunk.get("event") == "message_end":
+                                # 快速输出剩余内容
+                                while output_buffer:
+                                    char, msg_id = output_buffer.pop(0)
+                                    yield send_char(char, msg_id)
+                                    time.sleep(0.001)  # 固定使用最小延迟快速输出剩余内容
+
+                                # 只在零宽字符会话记忆模式时处理conversation_id
+                                if CONVERSATION_MEMORY_MODE == 2:
+                                    conversation_id = dify_chunk.get("conversation_id")
+                                    history = dify_chunk.get("conversation_history", [])
+
+                                    has_conversation_id = False
+                                    if history:
+                                        for msg in history:
+                                            if msg.get("role") == "assistant":
+                                                content = msg.get("content", "")
+                                                if decode_conversation_id(content) is not None:
+                                                    has_conversation_id = True
+                                                    break
+
+                                    # 只在新会话且历史消息中没有会话ID时插入
+                                    if conversation_id and not has_conversation_id:
+                                        logger.info(f"[Debug] Inserting conversation_id in stream: {conversation_id}")
+                                        encoded = encode_conversation_id(conversation_id)
+                                        logger.info(f"[Debug] Stream encoded content: {repr(encoded)}")
+                                        for char in encoded:
+                                            yield send_char(char, generate.message_id)
+
+                                final_chunk = {
+                                    "id": generate.message_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": int(time.time()),
+                                    "model": model,
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {},
+                                        "finish_reason": "stop"
+                                    }]
+                                }
+                                yield flush_chunk(f"data: {json.dumps(final_chunk)}\n\n")
+                                yield flush_chunk("data: [DONE]\n\n")
+
+                                return
+
                         for raw_bytes in response.iter_raw():
                             if not raw_bytes:
                                 continue
-                                
+
                             try:
-                                buffer += raw_bytes.decode('utf-8')
-                                
-                                while '\n' in buffer:
-                                    line, buffer = buffer.split('\n', 1)
-                                    line = line.strip()
-                                    
-                                    if not line or not line.startswith('data: '):
-                                        continue
-                                        
-                                    try:
-                                        json_str = line[6:]
-                                        dify_chunk = json.loads(json_str)
-                                        
-                                        if dify_chunk.get("event") == "message" and "answer" in dify_chunk:
-                                            current_answer = dify_chunk["answer"]
-                                            if not current_answer:
-                                                continue
-                                                
-                                            message_id = dify_chunk.get("message_id", "")
-                                            if not generate.message_id:
-                                                generate.message_id = message_id
-                                            
-                                            # 将当前批次的字符添加到输出缓冲区
-                                            for char in current_answer:
-                                                output_buffer.append((char, generate.message_id))
-                                            
-                                            # 根据缓冲区大小动态调整输出速度
-                                            while output_buffer:
-                                                char, msg_id = output_buffer.pop(0)
-                                                yield send_char(char, msg_id)
-                                                # 根据剩余缓冲区大小计算延迟
-                                                delay = calculate_delay(len(output_buffer))
-                                                time.sleep(delay)
-                                            
-                                            # 立即继续处理下一个请求
-                                            continue
-                                        
-                                        # 处理Agent模式的消息事件
-                                        elif dify_chunk.get("event") == "agent_message" and "answer" in dify_chunk:
-                                            current_answer = dify_chunk["answer"]
-                                            if not current_answer:
-                                                continue
-                                                
-                                            message_id = dify_chunk.get("message_id", "")
-                                            if not generate.message_id:
-                                                generate.message_id = message_id
-                                            
-                                            # 将当前批次的字符添加到输出缓冲区
-                                            for char in current_answer:
-                                                output_buffer.append((char, generate.message_id))
-                                            
-                                            # 根据缓冲区大小动态调整输出速度
-                                            while output_buffer:
-                                                char, msg_id = output_buffer.pop(0)
-                                                yield send_char(char, msg_id)
-                                                # 根据剩余缓冲区大小计算延迟
-                                                delay = calculate_delay(len(output_buffer))
-                                                time.sleep(delay)
-                                            
-                                            # 立即继续处理下一个请求
-                                            continue
-                                        
-                                        # 处理Agent的思考过程，记录日志但不输出给用户
-                                        elif dify_chunk.get("event") == "agent_thought":
-                                            thought_id = dify_chunk.get("id", "")
-                                            thought = dify_chunk.get("thought", "")
-                                            tool = dify_chunk.get("tool", "")
-                                            tool_input = dify_chunk.get("tool_input", "")
-                                            observation = dify_chunk.get("observation", "")
-                                            
-                                            logger.info(f"[Agent Thought] ID: {thought_id}, Tool: {tool}")
-                                            if thought:
-                                                logger.info(f"[Agent Thought] Thought: {thought}")
-                                            if tool_input:
-                                                logger.info(f"[Agent Thought] Tool Input: {tool_input}")
-                                            if observation:
-                                                logger.info(f"[Agent Thought] Observation: {observation}")
-                                            
-                                            # 获取message_id以关联思考和最终输出
-                                            message_id = dify_chunk.get("message_id", "")
-                                            if not generate.message_id and message_id:
-                                                generate.message_id = message_id
-                                            
-                                            continue
-                                        
-                                        # 处理消息中的文件(如图片)，记录日志但不直接输出给用户
-                                        elif dify_chunk.get("event") == "message_file":
-                                            file_id = dify_chunk.get("id", "")
-                                            file_type = dify_chunk.get("type", "")
-                                            file_url = dify_chunk.get("url", "")
-                                            
-                                            logger.info(f"[Message File] ID: {file_id}, Type: {file_type}, URL: {file_url}")
-                                            continue
-                                        
-                                        elif dify_chunk.get("event") == "message_end":
-                                            # 快速输出剩余内容
-                                            while output_buffer:
-                                                char, msg_id = output_buffer.pop(0)
-                                                yield send_char(char, msg_id)
-                                                time.sleep(0.001)  # 固定使用最小延迟快速输出剩余内容
-                                            
-                                            # 只在零宽字符会话记忆模式时处理conversation_id
-                                            if CONVERSATION_MEMORY_MODE == 2:
-                                                conversation_id = dify_chunk.get("conversation_id")
-                                                history = dify_chunk.get("conversation_history", [])
-                                                
-                                                has_conversation_id = False
-                                                if history:
-                                                    for msg in history:
-                                                        if msg.get("role") == "assistant":
-                                                            content = msg.get("content", "")
-                                                            if decode_conversation_id(content) is not None:
-                                                                has_conversation_id = True
-                                                                break
-                                                
-                                                # 只在新会话且历史消息中没有会话ID时插入
-                                                if conversation_id and not has_conversation_id:
-                                                    logger.info(f"[Debug] Inserting conversation_id in stream: {conversation_id}")
-                                                    encoded = encode_conversation_id(conversation_id)
-                                                    logger.info(f"[Debug] Stream encoded content: {repr(encoded)}")
-                                                    for char in encoded:
-                                                        yield send_char(char, generate.message_id)
-                                            
-                                            final_chunk = {
-                                                "id": generate.message_id,
-                                                "object": "chat.completion.chunk",
-                                                "created": int(time.time()),
-                                                "model": model,
-                                                "choices": [{
-                                                    "index": 0,
-                                                    "delta": {},
-                                                    "finish_reason": "stop"
-                                                }]
-                                            }
-                                            yield flush_chunk(f"data: {json.dumps(final_chunk)}\n\n")
-                                            yield flush_chunk("data: [DONE]\n\n")
-                                        
-                                    except json.JSONDecodeError as e:
-                                        logger.error(f"JSON decode error: {str(e)}")
-                                        continue
-                                        
-                            except Exception as e:
-                                logger.error(f"Error processing chunk: {str(e)}")
+                                text_buffer += decoder.decode(raw_bytes)
+                            except UnicodeDecodeError as decode_error:
+                                logger.error(f"Error decoding stream chunk: {decode_error}")
+                                decoder.reset()
+                                text_buffer = ""
                                 continue
+
+                            while '\n' in text_buffer:
+                                line, text_buffer = text_buffer.split('\n', 1)
+                                for chunk in process_line(line):
+                                    if chunk is not None:
+                                        yield chunk
+
+                        try:
+                            text_buffer += decoder.decode(b'', final=True)
+                        except UnicodeDecodeError as decode_error:
+                            logger.error(f"Error decoding stream chunk: {decode_error}")
+                            text_buffer = ""
+
+                        if text_buffer.strip():
+                            for chunk in process_line(text_buffer):
+                                if chunk is not None:
+                                    yield chunk
 
                 finally:
                     client.close()
