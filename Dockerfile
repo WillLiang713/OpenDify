@@ -16,6 +16,7 @@ RUN sed -i 's/deb.debian.org/mirrors.aliyun.com/g' /etc/apt/sources.list.d/debia
 # 安装系统依赖并更新系统包以修复安全漏洞
 RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     gcc \
+    curl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
