@@ -3,6 +3,7 @@ import logging
 import asyncio
 import codecs
 from flask import Flask, request, Response, stream_with_context, jsonify
+from admin import admin_bp
 import httpx
 import time
 from dotenv import load_dotenv
@@ -106,6 +107,7 @@ model_manager = DifyModelManager()
 DIFY_API_BASE = os.getenv("DIFY_API_BASE", "")
 
 app = Flask(__name__)
+app.register_blueprint(admin_bp)
 
 def get_api_key(model_name):
     """根据模型名称获取对应的API密钥"""

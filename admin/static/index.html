@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenDify Admin Console</title>
+  <link rel="stylesheet" href="/admin/static/css/styles.css">
+</head>
+<body>
+  <div class="scene">
+    <div class="orb orb--one"></div>
+    <div class="orb orb--two"></div>
+    <div class="grid"></div>
+  </div>
+
+  <main class="app fade-in">
+    <header class="hero">
+      <div class="brand">
+        <div class="logo">OpenDify</div>
+        <div class="brand-text">
+          <p data-i18n="brand.subtitle">Configure, validate, and apply in one place.</p>
+        </div>
+      </div>
+      <div class="hero-actions">
+        <button id="lang-toggle" class="ghost" type="button">中文</button>
+        <div id="service-status" class="status-chip hidden" data-i18n="status.notLoggedIn">Status: not logged in</div>
+      </div>
+    </header>
+
+    <section id="login-panel" class="panel panel-login">
+      <div class="panel-header">
+        <h2 data-i18n="login.title">Admin access</h2>
+        <p data-i18n="login.subtitle">Key stays in memory for this session.</p>
+      </div>
+      <div class="panel-body">
+        <label class="field">
+          <span data-i18n="login.tokenLabel">Admin Key</span>
+          <div class="field-row">
+            <input id="token-input" type="password" autocomplete="current-password" placeholder="Bearer key" data-i18n-placeholder="login.tokenPlaceholder">
+            <button id="token-toggle" class="ghost toggle" type="button" data-i18n="login.show">Show</button>
+          </div>
+        </label>
+        <button id="login-btn" class="primary" type="button" data-i18n="login.enter">Enter Console</button>
+        <div id="login-error" class="helper"></div>
+      </div>
+    </section>
+
+    <section id="app-panel" class="panel hidden">
+      <div class="panel-header row">
+        <div>
+          <h2 data-i18n="config.title">Configuration</h2>
+          <p id="config-meta" data-i18n="config.loading">Loading...</p>
+        </div>
+        <div class="toolbar">
+          <button id="refresh-btn" class="ghost" type="button" data-i18n="actions.refresh">Refresh</button>
+          <button id="save-btn" class="primary" type="button" data-i18n="actions.save">Save Changes</button>
+        </div>
+      </div>
+
+      <div class="preview-card">
+        <div>
+          <div class="preview-title" data-i18n="preview.title">API Preview</div>
+          <div class="preview-label" data-i18n="preview.label">OpenAI Compatible Base</div>
+          <div id="api-preview-base" class="preview-value">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/</div>
+          <div class="preview-list">
+            <div class="preview-item">
+              <span data-i18n="preview.endpoint.chat">Chat</span>
+              <span id="api-preview-chat" class="preview-url">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/chat/completions</span>
+            </div>
+            <div class="preview-item">
+              <span data-i18n="preview.endpoint.models">Models</span>
+              <span id="api-preview-models" class="preview-url">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/models</span>
+            </div>
+          </div>
+        </div>
+        <button id="copy-preview" class="ghost toggle" type="button" data-i18n="preview.copy">Copy</button>
+      </div>
+
+      <div id="config-groups" class="config-groups"></div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast"></div>
+
+  <script type="module" src="/admin/static/js/app.js"></script>
+</body>
+</html>
