@@ -31,8 +31,9 @@ VALID_API_KEYS = [key.strip() for key in os.getenv("VALID_API_KEYS", "").split("
 CONVERSATION_MEMORY_MODE = int(os.getenv('CONVERSATION_MEMORY_MODE', '1'))
 
 # HTTP客户端超时配置（秒）
-HTTP_TIMEOUT = int(os.getenv('HTTP_TIMEOUT', '30'))  # 默认30秒超时
-HTTP_CONNECT_TIMEOUT = int(os.getenv('HTTP_CONNECT_TIMEOUT', '10'))  # 默认10秒连接超时
+# Chatflow应用可能需要较长处理时间，建议设置较大的超时值
+HTTP_TIMEOUT = int(os.getenv('HTTP_TIMEOUT', '300'))  # 默认300秒(5分钟)超时，适配Chatflow长时间处理
+HTTP_CONNECT_TIMEOUT = int(os.getenv('HTTP_CONNECT_TIMEOUT', '30'))  # 默认30秒连接超时
 
 class DifyModelManager:
     def __init__(self):
@@ -51,7 +52,7 @@ class DifyModelManager:
     async def fetch_app_info(self, api_key):
         """获取Dify应用信息"""
         try:
-            async with httpx.AsyncClient(timeout=(HTTP_TIMEOUT, HTTP_CONNECT_TIMEOUT)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=HTTP_CONNECT_TIMEOUT)) as client:
                 headers = {
                     "Authorization": f"Bearer {api_key}",
                     "Content-Type": "application/json"
@@ -138,7 +139,7 @@ async def upload_image_to_dify(api_key, base64_data, user_id="default_user"):
         
         try:
             # 使用httpx上传文件到Dify
-            async with httpx.AsyncClient(timeout=(HTTP_TIMEOUT, HTTP_CONNECT_TIMEOUT)) as client:
+            async with httpx.AsyncClient(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=HTTP_CONNECT_TIMEOUT)) as client:
                 headers = {
                     "Authorization": f"Bearer {api_key}"
                 }
@@ -631,7 +632,8 @@ def chat_completions():
 
         if stream:
             def generate():
-                client = httpx.Client(timeout=None)
+                # 使用正确的超时配置：连接超时30秒，读取无限制（流式需要长时间等待）
+                client = httpx.Client(timeout=httpx.Timeout(None, connect=HTTP_CONNECT_TIMEOUT))
                 
                 def flush_chunk(chunk_data):
                     """Helper function to flush chunks immediately"""
@@ -684,6 +686,27 @@ def chat_completions():
                             'Connection': 'keep-alive'
                         }
                     ) as response:
+                        # 检查HTTP状态码，非2xx状态码需要特殊处理
+                        if response.status_code != 200:
+                            error_body = response.read().decode('utf-8')
+                            logger.error(f"Dify API返回错误状态码: {response.status_code}, body: {error_body}")
+                            error_chunk = {
+                                "id": "error",
+                                "object": "chat.completion.chunk",
+                                "created": int(time.time()),
+                                "model": model,
+                                "choices": [{
+                                    "index": 0,
+                                    "delta": {
+                                        "content": f"[Error] Dify API错误 (HTTP {response.status_code}): {error_body[:200]}"
+                                    },
+                                    "finish_reason": "stop"
+                                }]
+                            }
+                            yield flush_chunk(f"data: {json.dumps(error_chunk)}\n\n")
+                            yield flush_chunk("data: [DONE]\n\n")
+                            return
+
                         generate.message_id = None
                         decoder = codecs.getincrementaldecoder("utf-8")()
                         text_buffer = ""
@@ -728,6 +751,81 @@ def chat_completions():
                                     delay = calculate_delay(len(output_buffer))
                                     time.sleep(delay)
 
+                                return
+
+                            # 处理Dify API错误事件（如超时、工作流失败等）
+                            if dify_chunk.get("event") == "error":
+                                error_code = dify_chunk.get("code", "unknown_error")
+                                error_message = dify_chunk.get("message", "Unknown error occurred")
+                                error_status = dify_chunk.get("status", 500)
+
+                                logger.error(f"[Dify Error] Code: {error_code}, Status: {error_status}, Message: {error_message}")
+
+                                # 将错误信息作为内容输出给用户
+                                error_content = f"[Error] {error_message}"
+                                error_chunk = {
+                                    "id": generate.message_id or "error",
+                                    "object": "chat.completion.chunk",
+                                    "created": int(time.time()),
+                                    "model": model,
+                                    "choices": [{
+                                        "index": 0,
+                                        "delta": {
+                                            "content": error_content
+                                        },
+                                        "finish_reason": "stop"
+                                    }]
+                                }
+                                yield flush_chunk(f"data: {json.dumps(error_chunk)}\n\n")
+                                yield flush_chunk("data: [DONE]\n\n")
+                                return
+
+                            # 处理workflow_started事件（Chatflow应用特有）
+                            if dify_chunk.get("event") == "workflow_started":
+                                workflow_run_id = dify_chunk.get("workflow_run_id", "")
+                                logger.info(f"[Workflow] Started, run_id: {workflow_run_id}")
+                                return
+
+                            # 处理node_started事件（Chatflow节点开始执行）
+                            if dify_chunk.get("event") == "node_started":
+                                node_id = dify_chunk.get("data", {}).get("node_id", "")
+                                node_type = dify_chunk.get("data", {}).get("node_type", "")
+                                logger.info(f"[Workflow] Node started: {node_id} ({node_type})")
+                                return
+
+                            # 处理node_finished事件（Chatflow节点执行完成）
+                            if dify_chunk.get("event") == "node_finished":
+                                node_id = dify_chunk.get("data", {}).get("node_id", "")
+                                node_type = dify_chunk.get("data", {}).get("node_type", "")
+                                status = dify_chunk.get("data", {}).get("status", "")
+                                logger.info(f"[Workflow] Node finished: {node_id} ({node_type}) - {status}")
+                                return
+
+                            # 处理workflow_finished事件（Chatflow工作流完成）
+                            if dify_chunk.get("event") == "workflow_finished":
+                                workflow_run_id = dify_chunk.get("workflow_run_id", "")
+                                status = dify_chunk.get("data", {}).get("status", "")
+                                logger.info(f"[Workflow] Finished, run_id: {workflow_run_id}, status: {status}")
+
+                                # 如果工作流失败，输出错误信息
+                                if status == "failed":
+                                    error = dify_chunk.get("data", {}).get("error", "Workflow execution failed")
+                                    logger.error(f"[Workflow] Failed: {error}")
+                                    error_chunk = {
+                                        "id": generate.message_id or "error",
+                                        "object": "chat.completion.chunk",
+                                        "created": int(time.time()),
+                                        "model": model,
+                                        "choices": [{
+                                            "index": 0,
+                                            "delta": {
+                                                "content": f"[Workflow Error] {error}"
+                                            },
+                                            "finish_reason": "stop"
+                                        }]
+                                    }
+                                    yield flush_chunk(f"data: {json.dumps(error_chunk)}\n\n")
+                                    yield flush_chunk("data: [DONE]\n\n")
                                 return
 
                             # 处理Agent模式的消息事件
@@ -878,7 +976,7 @@ def chat_completions():
         else:
             async def sync_response():
                 try:
-                    async with httpx.AsyncClient(timeout=(HTTP_TIMEOUT, HTTP_CONNECT_TIMEOUT)) as client:
+                    async with httpx.AsyncClient(timeout=httpx.Timeout(HTTP_TIMEOUT, connect=HTTP_CONNECT_TIMEOUT)) as client:
                         response = await client.post(
                             dify_endpoint,
                             json=dify_request,
