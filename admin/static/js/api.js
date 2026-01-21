@@ -1,5 +1,5 @@
 export function createApiClient(token) {
-  const base = "/admin/api";
+  const base = "/opendify/api";
 
   async function request(path, options = {}) {
     const headers = {
@@ -31,7 +31,9 @@ export function createApiClient(token) {
         (data && data.error) ||
         (data && data.message) ||
         `Request failed (${response.status})`;
-      throw new Error(message);
+      const error = new Error(message);
+      error.status = response.status;
+      throw error;
     }
 
     return data;
@@ -44,6 +46,5 @@ export function createApiClient(token) {
         method: "PUT",
         body: JSON.stringify({ updates }),
       }),
-    getStatus: () => request("/service/status"),
   };
 }

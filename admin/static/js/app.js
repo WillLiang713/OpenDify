@@ -10,26 +10,23 @@ const configGroups = document.getElementById("config-groups");
 const configMeta = document.getElementById("config-meta");
 const saveButton = document.getElementById("save-btn");
 const refreshButton = document.getElementById("refresh-btn");
-const statusChip = document.getElementById("service-status");
+const logoutButton = document.getElementById("logout-btn");
 const toast = document.getElementById("toast");
 const langToggle = document.getElementById("lang-toggle");
-const previewBase = document.getElementById("api-preview-base");
-const previewChat = document.getElementById("api-preview-chat");
-const previewModels = document.getElementById("api-preview-models");
-const copyPreview = document.getElementById("copy-preview");
+
+const TOKEN_STORAGE_KEY = "opendify-admin-token";
 
 let api = null;
 let configItems = [];
 const originalValues = new Map();
 let currentLang = "en";
-let lastStatus = null;
 let isAuthenticated = false;
 
 const translations = {
   en: {
     "brand.subtitle": "Configure, validate, and apply in one place.",
     "login.title": "Admin access",
-    "login.subtitle": "Key stays in memory for this session.",
+    "login.subtitle": "Enter your admin key to continue.",
     "login.tokenLabel": "Admin Key",
     "login.tokenPlaceholder": "Bearer key",
     "login.show": "Show",
@@ -42,30 +39,25 @@ const translations = {
     "config.hiddenPlaceholder": "Hidden value. Enter to update.",
     "actions.refresh": "Refresh",
     "actions.save": "Save Changes",
-    "preview.title": "API Preview",
-    "preview.label": "OpenAI Compatible Base",
-    "preview.copy": "Copy Base",
-    "preview.copied": "Copied!",
-    "preview.endpoint.chat": "Chat",
-    "preview.endpoint.models": "Models",
-    "status.unknown": "Unknown",
-    "status.notLoggedIn": "Not logged in",
-    "status.running": () => "Running",
-    "status.other": (status) => `${status || "unknown"}`,
+    "actions.logout": "Sign Out",
     "toast.welcome": "Welcome to the admin console.",
     "toast.noChanges": "No changes to save.",
     "toast.saved": "Configuration saved.",
     "toast.refresh": "Configuration refreshed.",
     "toast.saveFailed": "Save failed.",
     "toast.refreshFailed": "Refresh failed.",
+    "toast.sessionExpired": "Session expired. Please sign in again.",
+    "toast.signedOut": "Signed out.",
     "error.tokenRequired": "Key is required.",
     "error.loginFailed": "Login failed.",
     "error.invalidFields": "Please fix invalid fields before saving.",
+    "error.sessionExpired": "Session expired. Please enter the admin key again.",
+    "confirm.save": "Save these changes now?",
   },
   zh: {
     "brand.subtitle": "\u5728\u4e00\u4e2a\u754c\u9762\u5b8c\u6210\u914d\u7f6e\u3001\u6821\u9a8c\u4e0e\u751f\u6548\u3002",
     "login.title": "管理员访问",
-    "login.subtitle": "管理密钥仅保存在当前会话内存中。",
+    "login.subtitle": "请输入管理密钥以继续。",
     "login.tokenLabel": "管理密钥",
     "login.tokenPlaceholder": "Bearer 密钥",
     "login.show": "显示",
@@ -78,25 +70,20 @@ const translations = {
     "config.hiddenPlaceholder": "已隐藏，如需修改请重新输入。",
     "actions.refresh": "刷新",
     "actions.save": "保存更改",
-    "preview.title": "接口预览",
-    "preview.label": "OpenAI 兼容基础地址",
-    "preview.copy": "复制基础地址",
-    "preview.copied": "已复制",
-    "preview.endpoint.chat": "对话",
-    "preview.endpoint.models": "模型",
-    "status.unknown": "未知",
-    "status.notLoggedIn": "未登录",
-    "status.running": () => "运行中",
-    "status.other": (status) => `${status || "未知"}`,
+    "actions.logout": "退出登录",
     "toast.welcome": "欢迎进入管理控制台。",
     "toast.noChanges": "没有需要保存的改动。",
     "toast.saved": "配置已保存。",
     "toast.refresh": "配置已刷新。",
     "toast.saveFailed": "保存失败。",
     "toast.refreshFailed": "刷新失败。",
+    "toast.sessionExpired": "登录已失效，请重新输入管理密钥。",
+    "toast.signedOut": "已退出登录。",
     "error.tokenRequired": "请输入管理密钥。",
     "error.loginFailed": "登录失败。",
     "error.invalidFields": "请先修正无效字段。",
+    "error.sessionExpired": "登录已失效，请重新输入管理密钥。",
+    "confirm.save": "确认保存当前更改？",
   },
 };
 
@@ -204,7 +191,6 @@ function applyTranslations() {
   configMeta.textContent = configItems.length
     ? t("config.loaded", configItems.length)
     : t("config.loading");
-  setStatus(lastStatus);
 }
 
 function showToast(message, variant = "info") {
@@ -215,27 +201,52 @@ function showToast(message, variant = "info") {
   showToast._timer = setTimeout(() => toast.classList.remove("show"), 2600);
 }
 
-function setStatus(status) {
-  lastStatus = status;
-  if (!isAuthenticated) {
-    statusChip.textContent = t("status.notLoggedIn");
-    statusChip.classList.remove("ok", "warn");
-    return;
+function persistToken(token) {
+  try {
+    if (!token) {
+      sessionStorage.removeItem(TOKEN_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(TOKEN_STORAGE_KEY, token);
+  } catch (error) {
+    // Ignore storage failures (e.g. privacy mode).
   }
-  if (!status) {
-    statusChip.textContent = t("status.unknown");
-    statusChip.classList.remove("ok", "warn");
-    return;
+}
+
+function getPersistedToken() {
+  try {
+    return sessionStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch (error) {
+    return null;
   }
-  if (status.status === "running") {
-    statusChip.textContent = t("status.running");
-    statusChip.classList.add("ok");
-    statusChip.classList.remove("warn");
-  } else {
-    statusChip.textContent = t("status.other", status.status);
-    statusChip.classList.add("warn");
-    statusChip.classList.remove("ok");
+}
+
+function handleUnauthorized(error) {
+  if (!error || error.status !== 401) {
+    return false;
   }
+  persistToken("");
+  api = null;
+  isAuthenticated = false;
+  logoutButton.classList.add("hidden");
+  loginPanel.classList.remove("hidden");
+  appPanel.classList.add("hidden");
+  tokenInput.value = "";
+  loginError.textContent = t("error.sessionExpired");
+  showToast(t("toast.sessionExpired"), "error");
+  return true;
+}
+
+function handleLogout() {
+  persistToken("");
+  api = null;
+  isAuthenticated = false;
+  logoutButton.classList.add("hidden");
+  loginPanel.classList.remove("hidden");
+  appPanel.classList.add("hidden");
+  tokenInput.value = "";
+  loginError.textContent = "";
+  showToast(t("toast.signedOut"));
 }
 
 function toggleLoginVisibility() {
@@ -293,9 +304,6 @@ function buildInput(item) {
 
   input.addEventListener("input", () => {
     input.classList.remove("is-invalid");
-    if (input.dataset.key === "SERVER_HOST" || input.dataset.key === "EXTERNAL_PORT") {
-      updatePreviewFromInputs();
-    }
   });
   return input;
 }
@@ -384,62 +392,6 @@ function renderConfig(items) {
   });
 }
 
-function buildBaseUrl(hostInputValue, portInputValue) {
-  const rawHost = (hostInputValue || "").trim();
-  const rawPort = (portInputValue || "").trim();
-  const portValue = rawPort || "<EXTERNAL_PORT>";
-  const browserHost = window.location.hostname || "localhost";
-
-  if (!rawHost) {
-    return `http://<SERVER_HOST>:${portValue}/v1/`;
-  }
-
-  let host = rawHost;
-  if (host === "0.0.0.0" || host === "127.0.0.1" || host === "localhost") {
-    host = browserHost;
-  }
-  let scheme = "http";
-  let hostPort = host;
-
-  if (host.startsWith("http://") || host.startsWith("https://")) {
-    try {
-      const url = new URL(host);
-      scheme = url.protocol.replace(":", "");
-      if (url.hostname === "0.0.0.0" || url.hostname === "127.0.0.1") {
-        const resolvedHost = browserHost;
-        hostPort = url.port ? `${resolvedHost}:${url.port}` : resolvedHost;
-      } else {
-        hostPort = url.host || host;
-      }
-    } catch (error) {
-      hostPort = host;
-    }
-  } else if (hostPort.includes("/")) {
-    hostPort = hostPort.split("/")[0];
-  }
-
-  const isIpv6 = hostPort.startsWith("[");
-  const hasPort = isIpv6 ? hostPort.includes("]:") : hostPort.includes(":");
-
-  if (!hasPort) {
-    hostPort = `${hostPort}:${portValue}`;
-  }
-
-  return `${scheme}://${hostPort}/v1/`;
-}
-
-function updatePreviewFromInputs() {
-  const hostInput = document.querySelector(".config-input[data-key='SERVER_HOST']");
-  const portInput = document.querySelector(".config-input[data-key='EXTERNAL_PORT']");
-  const hostValue = hostInput ? hostInput.value : "";
-  const portValue = portInput ? portInput.value : "";
-  const baseUrl = buildBaseUrl(hostValue, portValue);
-  const baseTrim = baseUrl.replace(/\/+$/, "");
-  previewBase.textContent = baseUrl;
-  previewChat.textContent = `${baseTrim}/chat/completions`;
-  previewModels.textContent = `${baseTrim}/models`;
-}
-
 function collectUpdates() {
   const updates = {};
   const inputs = Array.from(document.querySelectorAll(".config-input"));
@@ -475,16 +427,6 @@ async function loadConfig() {
   configItems = response.items || [];
   renderConfig(configItems);
   configMeta.textContent = t("config.loaded", configItems.length);
-  updatePreviewFromInputs();
-}
-
-async function refreshStatus() {
-  try {
-    const status = await api.getStatus();
-    setStatus(status);
-  } catch (error) {
-    setStatus({ status: "unknown" });
-  }
 }
 
 async function handleLogin() {
@@ -500,16 +442,17 @@ async function handleLogin() {
   try {
     await loadConfig();
     isAuthenticated = true;
-    statusChip.classList.remove("hidden");
-    await refreshStatus();
+    persistToken(token);
+    logoutButton.classList.remove("hidden");
     loginPanel.classList.add("hidden");
     appPanel.classList.remove("hidden");
     showToast(t("toast.welcome"));
-    updatePreviewFromInputs();
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     api = null;
     isAuthenticated = false;
-    statusChip.classList.add("hidden");
     loginError.textContent = error.message || t("error.loginFailed");
   }
 }
@@ -526,11 +469,18 @@ async function handleSave() {
       return;
     }
 
+    if (!window.confirm(t("confirm.save"))) {
+      return;
+    }
+
     saveButton.disabled = true;
     await api.updateConfig(updates);
     showToast(t("toast.saved"));
     await loadConfig();
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     showToast(error.message || t("toast.saveFailed"), "error");
   } finally {
     saveButton.disabled = false;
@@ -546,6 +496,9 @@ async function handleRefresh() {
     await loadConfig();
     showToast(t("toast.refresh"));
   } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
     showToast(error.message || t("toast.refreshFailed"), "error");
   }
 }
@@ -554,28 +507,7 @@ loginButton.addEventListener("click", handleLogin);
 tokenToggle.addEventListener("click", toggleLoginVisibility);
 refreshButton.addEventListener("click", handleRefresh);
 saveButton.addEventListener("click", handleSave);
-copyPreview.addEventListener("click", async () => {
-  const text = previewBase.textContent;
-  try {
-    await navigator.clipboard.writeText(text);
-    showToast(t("preview.copied"));
-  } catch (error) {
-    try {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.style.position = "fixed";
-      area.style.opacity = "0";
-      document.body.appendChild(area);
-      area.focus();
-      area.select();
-      document.execCommand("copy");
-      document.body.removeChild(area);
-      showToast(t("preview.copied"));
-    } catch (fallbackError) {
-      showToast(text);
-    }
-  }
-});
+logoutButton.addEventListener("click", handleLogout);
 langToggle.addEventListener("click", () => {
   currentLang = currentLang === "zh" ? "en" : "zh";
   localStorage.setItem("opendify-lang", currentLang);
@@ -583,7 +515,6 @@ langToggle.addEventListener("click", () => {
   if (configItems.length) {
     renderConfig(configItems);
   }
-  refreshStatus();
 });
 
 window.addEventListener("keydown", (event) => {
@@ -595,6 +526,29 @@ window.addEventListener("keydown", (event) => {
   }
 });
 
+async function restoreSession() {
+  const token = getPersistedToken();
+  if (!token) {
+    return;
+  }
+  tokenInput.value = token;
+  api = createApiClient(token);
+  try {
+    await loadConfig();
+    isAuthenticated = true;
+    logoutButton.classList.remove("hidden");
+    loginPanel.classList.add("hidden");
+    appPanel.classList.remove("hidden");
+  } catch (error) {
+    if (handleUnauthorized(error)) {
+      return;
+    }
+    api = null;
+    isAuthenticated = false;
+    loginError.textContent = error.message || t("error.loginFailed");
+  }
+}
+
 const savedLang = localStorage.getItem("opendify-lang");
 if (savedLang) {
   currentLang = savedLang;
@@ -602,3 +556,4 @@ if (savedLang) {
   currentLang = "zh";
 }
 applyTranslations();
+restoreSession();

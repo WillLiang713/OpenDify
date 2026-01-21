@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>OpenDify Admin Console</title>
-  <link rel="stylesheet" href="/admin/static/css/styles.css">
+  <link rel="stylesheet" href="/opendify/static/css/styles.css">
 </head>
 <body>
   <div class="scene">
@@ -23,14 +23,14 @@
       </div>
       <div class="hero-actions">
         <button id="lang-toggle" class="ghost" type="button">中文</button>
-        <div id="service-status" class="status-chip hidden" data-i18n="status.notLoggedIn">Status: not logged in</div>
+        <button id="logout-btn" class="ghost hidden" type="button" data-i18n="actions.logout">Sign Out</button>
       </div>
     </header>
 
     <section id="login-panel" class="panel panel-login">
       <div class="panel-header">
         <h2 data-i18n="login.title">Admin access</h2>
-        <p data-i18n="login.subtitle">Key stays in memory for this session.</p>
+        <p data-i18n="login.subtitle">Enter your admin key to continue.</p>
       </div>
       <div class="panel-body">
         <label class="field">
@@ -57,31 +57,12 @@
         </div>
       </div>
 
-      <div class="preview-card">
-        <div>
-          <div class="preview-title" data-i18n="preview.title">API Preview</div>
-          <div class="preview-label" data-i18n="preview.label">OpenAI Compatible Base</div>
-          <div id="api-preview-base" class="preview-value">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/</div>
-          <div class="preview-list">
-            <div class="preview-item">
-              <span data-i18n="preview.endpoint.chat">Chat</span>
-              <span id="api-preview-chat" class="preview-url">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/chat/completions</span>
-            </div>
-            <div class="preview-item">
-              <span data-i18n="preview.endpoint.models">Models</span>
-              <span id="api-preview-models" class="preview-url">http://&lt;SERVER_HOST&gt;:&lt;EXTERNAL_PORT&gt;/v1/models</span>
-            </div>
-          </div>
-        </div>
-        <button id="copy-preview" class="ghost toggle" type="button" data-i18n="preview.copy">Copy</button>
-      </div>
-
       <div id="config-groups" class="config-groups"></div>
     </section>
   </main>
 
   <div id="toast" class="toast"></div>
 
-  <script type="module" src="/admin/static/js/app.js"></script>
+  <script type="module" src="/opendify/static/js/app.js"></script>
 </body>
 </html>

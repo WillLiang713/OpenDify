@@ -265,11 +265,7 @@ def update_env(updates, env_path=DEFAULT_ENV_PATH):
         with open(env_path, "r", encoding="utf-8") as handle:
             content = handle.read()
         has_trailing_newline = content.endswith("\n") or content.endswith("\r\n")
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-        backup_path = f"{env_path}.bak-{timestamp}"
-        shutil.copyfile(env_path, backup_path)
-    else:
-        backup_path = None
+    backup_path = None
 
     updated_keys = set()
     existing_keys = set()
