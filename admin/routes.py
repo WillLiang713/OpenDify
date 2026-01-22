@@ -30,7 +30,6 @@ def require_admin_auth(handler):
     return wrapper
 
 
-@admin_bp.route("")
 @admin_bp.route("/")
 def admin_index():
     return send_from_directory(STATIC_DIR, "index.html")

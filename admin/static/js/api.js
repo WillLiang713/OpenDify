@@ -1,5 +1,5 @@
 export function createApiClient(token) {
-  const base = "/opendify/api";
+  const base = "/api";
 
   async function request(path, options = {}) {
     const headers = {

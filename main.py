@@ -107,7 +107,7 @@ model_manager = DifyModelManager()
 # 从环境变量获取API基础URL
 DIFY_API_BASE = os.getenv("DIFY_API_BASE", "")
 
-app = Flask(__name__)
+app = Flask(__name__, static_folder=None)
 app.register_blueprint(admin_bp)
 
 def get_api_key(model_name):

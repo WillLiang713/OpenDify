@@ -47,7 +47,7 @@ cp .env.example .env
 
 ## 管理后台
 
-访问 `http://<host>:<port>/opendify`，使用 `ADMIN_TOKEN` 作为管理密钥登录。
+访问 `http://<host>:<port>/`，使用 `ADMIN_TOKEN` 作为管理密钥登录。
 
 说明：
 - 保存配置后会自动热加载（无需重启）
