@@ -86,3 +86,6 @@ docker-compose.yml
 *.bak
 *.backup
 *.tar
+
+.codex
+.opencode
