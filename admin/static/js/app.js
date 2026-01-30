@@ -17,6 +17,15 @@ const langToggle = document.getElementById("lang-toggle");
 
 const TOKEN_STORAGE_KEY = "opendify-admin-token";
 
+const ICONS = {
+  eye: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>`,
+  eyeOff: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68"/><path d="M6.61 6.61A13.52 13.52 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><line x1="2" y1="2" x2="22" y2="22"/></svg>`,
+  refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/></svg>`,
+  save: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`,
+  logout: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>`,
+  languages: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 8 6 6"/><path d="m4 14 6-6 2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/></svg>`,
+};
+
 let api = null;
 let configItems = [];
 const originalValues = new Map();
@@ -56,10 +65,10 @@ const translations = {
     "confirm.save": "Save these changes now?",
   },
   zh: {
-    "brand.subtitle": "\u5728\u4e00\u4e2a\u754c\u9762\u5b8c\u6210\u914d\u7f6e\u3001\u6821\u9a8c\u4e0e\u751f\u6548\u3002",
+    "brand.subtitle": "在一个界面完成配置、校验与生效。",
     "login.title": "管理员访问",
     "login.subtitle": "请输入以继续。",
-    "login.tokenLabel": "",
+    "login.tokenLabel": "管理员密钥",
     "login.tokenPlaceholder": "密钥",
     "login.show": "显示",
     "login.hide": "隐藏",
@@ -91,10 +100,10 @@ const translations = {
 const configTranslations = {
   zh: {
     groups: {
-      API: "API 配置",
-      Server: "服务器配置",
-      Advanced: "高级设置",
-      Security: "安全设置",
+      API: "API",
+      Server: "服务器",
+      Advanced: "高级",
+      Security: "安全",
       General: "通用",
     },
     keys: {
@@ -186,9 +195,29 @@ function applyTranslations() {
     const key = node.getAttribute("data-i18n-placeholder");
     node.setAttribute("placeholder", t(key));
   });
-  tokenToggle.textContent =
-    tokenInput.type === "password" ? t("login.show") : t("login.hide");
-  langToggle.textContent = currentLang === "zh" ? "EN" : "中文";
+
+  // Set Icons
+  const setIcon = (id, iconName) => {
+    const btn = document.getElementById(id);
+    if (btn) {
+      const container = btn.querySelector(".icon-container");
+      if (container) container.innerHTML = ICONS[iconName] || "";
+    }
+  };
+
+  setIcon("lang-toggle", "languages");
+  setIcon("logout-btn", "logout");
+  setIcon("refresh-btn", "refresh");
+  setIcon("save-btn", "save");
+
+  const isPassword = tokenInput.type === "password";
+  const tokenToggleIcon = isPassword ? "eye" : "eyeOff";
+  const tokenToggleContainer = tokenToggle.querySelector(".icon-container");
+  if (tokenToggleContainer) tokenToggleContainer.innerHTML = ICONS[tokenToggleIcon];
+  const tokenToggleText = tokenToggle.querySelector(".btn-text");
+  if (tokenToggleText) tokenToggleText.textContent = isPassword ? t("login.show") : t("login.hide");
+
+  langToggle.querySelector(".btn-text").textContent = currentLang === "zh" ? "EN" : "中文";
   configMeta.textContent = configItems.length
     ? t("config.loaded", configItems.length)
     : t("config.loading");
@@ -253,7 +282,11 @@ function handleLogout() {
 function toggleLoginVisibility() {
   const isPassword = tokenInput.type === "password";
   tokenInput.type = isPassword ? "text" : "password";
-  tokenToggle.textContent = isPassword ? t("login.hide") : t("login.show");
+  const icon = isPassword ? "eyeOff" : "eye";
+  const container = tokenToggle.querySelector(".icon-container");
+  if (container) container.innerHTML = ICONS[icon];
+  const text = tokenToggle.querySelector(".btn-text");
+  if (text) text.textContent = isPassword ? t("login.hide") : t("login.show");
 }
 
 function resetInvalidState() {
@@ -389,14 +422,16 @@ function renderConfig(items) {
 
       if (item.isSecret) {
         const toggle = document.createElement("button");
-        toggle.className = "ghost toggle";
+        toggle.className = "ghost toggle btn-with-icon";
         toggle.type = "button";
-        toggle.textContent = t("login.show");
+        toggle.innerHTML = `<span class="icon-container">${ICONS.eye}</span><span class="btn-text">${t("login.show")}</span>`;
         toggle.addEventListener("click", () => {
           const willShow = input.type === "password";
           input.type = willShow ? "text" : "password";
-          toggle.textContent =
-            input.type === "password" ? t("login.show") : t("login.hide");
+          const icon = willShow ? "eyeOff" : "eye";
+          const text = willShow ? t("login.hide") : t("login.show");
+          toggle.querySelector(".icon-container").innerHTML = ICONS[icon];
+          toggle.querySelector(".btn-text").textContent = text;
         });
         control.appendChild(toggle);
       }
@@ -493,7 +528,7 @@ async function handleSave() {
 
     saveButton.disabled = true;
     await api.updateConfig(updates);
-    showToast(t("toast.saved"));
+    showToast(t("toast.saved"), "success");
     await loadConfig();
   } catch (error) {
     if (handleUnauthorized(error)) {
@@ -512,7 +547,7 @@ async function handleRefresh() {
 
   try {
     await loadConfig();
-    showToast(t("toast.refresh"));
+    showToast(t("toast.refresh"), "success");
   } catch (error) {
     if (handleUnauthorized(error)) {
       return;

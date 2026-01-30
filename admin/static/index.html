@@ -22,8 +22,14 @@
         </div>
       </div>
       <div class="hero-actions">
-        <button id="lang-toggle" class="ghost" type="button">中文</button>
-        <button id="logout-btn" class="ghost hidden" type="button" data-i18n="actions.logout">Sign Out</button>
+        <button id="lang-toggle" class="ghost btn-with-icon" type="button">
+          <span class="icon-container"></span>
+          <span class="btn-text">中文</span>
+        </button>
+        <button id="logout-btn" class="ghost hidden btn-with-icon" type="button">
+          <span class="icon-container"></span>
+          <span class="btn-text" data-i18n="actions.logout">Sign Out</span>
+        </button>
       </div>
     </header>
 
@@ -37,7 +43,10 @@
           <span data-i18n="login.tokenLabel">Admin Key</span>
           <div class="field-row">
             <input id="token-input" type="password" autocomplete="current-password" placeholder="Key" data-i18n-placeholder="login.tokenPlaceholder">
-            <button id="token-toggle" class="ghost toggle" type="button" data-i18n="login.show">Show</button>
+            <button id="token-toggle" class="ghost toggle btn-with-icon" type="button">
+              <span class="icon-container"></span>
+              <span class="btn-text" data-i18n="login.show">Show</span>
+            </button>
           </div>
         </label>
         <button id="login-btn" class="primary" type="button" data-i18n="login.enter">Enter Console</button>
@@ -52,8 +61,14 @@
           <p id="config-meta" data-i18n="config.loading">Loading...</p>
         </div>
         <div class="toolbar">
-          <button id="refresh-btn" class="ghost" type="button" data-i18n="actions.refresh">Refresh</button>
-          <button id="save-btn" class="primary" type="button" data-i18n="actions.save">Save Changes</button>
+          <button id="refresh-btn" class="ghost btn-with-icon" type="button">
+            <span class="icon-container"></span>
+            <span class="btn-text" data-i18n="actions.refresh">Refresh</span>
+          </button>
+          <button id="save-btn" class="primary btn-with-icon" type="button">
+            <span class="icon-container"></span>
+            <span class="btn-text" data-i18n="actions.save">Save Changes</span>
+          </button>
         </div>
       </div>
 
