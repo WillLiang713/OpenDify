@@ -6,6 +6,7 @@ const tokenInput = document.getElementById("token-input");
 const tokenToggle = document.getElementById("token-toggle");
 const loginButton = document.getElementById("login-btn");
 const loginError = document.getElementById("login-error");
+const configNav = document.getElementById("config-nav");
 const configGroups = document.getElementById("config-groups");
 const configMeta = document.getElementById("config-meta");
 const saveButton = document.getElementById("save-btn");
@@ -310,6 +311,7 @@ function buildInput(item) {
 
 function renderConfig(items) {
   configGroups.innerHTML = "";
+  configNav.innerHTML = "";
   originalValues.clear();
 
   const groupOrder = [];
@@ -325,16 +327,32 @@ function renderConfig(items) {
 
   let itemIndex = 0;
 
-  groupOrder.forEach((groupName) => {
-    const groupWrapper = document.createElement("div");
-    groupWrapper.className = "config-group";
-
-    const title = document.createElement("h3");
+  groupOrder.forEach((groupName, index) => {
     const groupLabel =
       (configTranslations[currentLang] &&
         configTranslations[currentLang].groups &&
         configTranslations[currentLang].groups[groupName]) ||
       groupName;
+
+    // Create Navigation Item
+    const navItem = document.createElement("button");
+    navItem.className = `nav-item ${index === 0 ? "active" : ""}`;
+    navItem.textContent = groupLabel;
+    navItem.dataset.group = groupName;
+    navItem.addEventListener("click", () => {
+      document.querySelectorAll(".nav-item").forEach((n) => n.classList.remove("active"));
+      document.querySelectorAll(".config-group").forEach((g) => g.classList.remove("active"));
+      navItem.classList.add("active");
+      groupWrapper.classList.add("active");
+    });
+    configNav.appendChild(navItem);
+
+    // Create Group Wrapper
+    const groupWrapper = document.createElement("div");
+    groupWrapper.className = `config-group ${index === 0 ? "active" : ""}`;
+    groupWrapper.dataset.group = groupName;
+
+    const title = document.createElement("h3");
     title.textContent = groupLabel;
     groupWrapper.appendChild(title);
 
@@ -388,7 +406,7 @@ function renderConfig(items) {
       groupWrapper.appendChild(row);
     });
 
-  configGroups.appendChild(groupWrapper);
+    configGroups.appendChild(groupWrapper);
   });
 }
 
